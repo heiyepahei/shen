@@ -1,0 +1,8 @@
+langchain
+langchain-openai
+langchain-community
+requests
+pypdf
+faiss-cpu
+# 注意：faiss-cpu 在某些 Windows 环境下安装可能需要额外配置
+# 如果安装失败，可以尝试 faiss-binary
