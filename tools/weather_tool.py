@@ -1,49 +1,35 @@
-# main.py (示例)
+# tools/weather_tool.py
+import os
+import requests
+from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
-from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+class WeatherInput(BaseModel):
+    city: str = Field(description="需要查询天气的城市名称，例如 '北京' 或 'San Francisco'")
 
-# 1. 导入你刚刚创建的工具
-from tools.weather_tool import get_weather
+@tool(args_schema=WeatherInput)
+def get_weather(city: str) -> str:
+    """当你需要查询一个具体城市的实时天气时，应使用此工具。它会返回该城市的温度和天气状况。"""
+    api_key = os.getenv("OPENWEATHERMAP_API_KEY")
+    if not api_key:
+        return "错误：管理员未配置OpenWeatherMap API密钥。"
 
-# 2. 将所有工具放入一个列表
-#    未来，知识库工具和本地函数工具也会被加到这里
-tools = [get_weather]
+    base_url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {"q": city, "appid": api_key, "units": "metric", "lang": "zh_cn"}
 
-# 3. 初始化大语言模型 (LLM)
-#    确保 OPENAI_API_KEY 环境变量已设置
-llm = ChatOpenAI(model="gpt-4-turbo", temperature=0)
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        description = data["weather"][0]["description"]
+        temperature = data["main"]["temp"]
+        return f"城市 '{city}' 的当前天气是：{description}，温度为 {temperature}°C。"
+    except requests.exceptions.HTTPError:
+        return f"错误：无法找到名为 '{city}' 的城市。"
+    except Exception as e:
+        return f"查询天气时发生未知错误: {e}"
 
-# 4. 创建 Prompt 模板
-#    这个模板至关重要，它告诉 Agent 如何行动，并为“记忆模块”预留了位置
-prompt = ChatPromptTemplate.from_messages([
-    ("system", "你是一个乐于助人的旅游助手。"),
-    # `chat_history` 占位符，用于实现记忆功能
-    MessagesPlaceholder(variable_name="chat_history", optional=True),
-    ("human", "{input}"),
-    # `agent_scratchpad` 占位符，是 Agent 思考过程的“草稿纸”
-    MessagesPlaceholder(variable_name="agent_scratchpad"),
-])
-
-# 5. 创建 Agent
-agent = create_openai_tools_agent(llm, tools, prompt)
-
-# 6. 创建 Agent 执行器 (Executor)
-#    `verbose=True` 可以打印出 Agent 的完整思考链，非常便于调试
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-# 7. 运行 Agent 并进行对话
 if __name__ == '__main__':
-    # 第一次对话
-    response = agent_executor.invoke({
-        "input": "你好，我想去北京旅游，能帮我查下今天那里的天气吗？"
-    })
-    print("AI:", response["output"])
-    
-    # 第二次对话（由于我们还没实现记忆模块，这里只是演示形式）
-    # response = agent_executor.invoke({
-    #     "input": "听起来不错，那上海呢？",
-    #     "chat_history": [ ... 上一轮的对话历史 ... ]
-    # })
-    # print("AI:", response["output"])
+    # 设置环境变量进行测试
+    os.environ["OPENWEATHERMAP_API_KEY"] = "你自己的OpenWeatherMap Key"
+    print(get_weather.invoke({"city": "伦敦"}))
